@@ -13,6 +13,7 @@
 - 依瑕疵面積比例輸出 OK／NG
 - 顯示像素級瑕疵遮罩與處理時間
 - 核心檢測邏輯與桌面介面分離
+- 可重現的 GPU 訓練、獨立測試與 ONNX 匯出流程
 
 ## 專案結構
 
@@ -21,6 +22,7 @@ src/AoiInspector.Core        檢測演算法與資料模型
 src/AoiInspector.App         Windows WPF 操作介面
 tests/AoiInspector.SmokeTests 無外部相依的自動驗證
 tools/AoiInspector.DatasetEvaluator 真實資料集批次評估工具
+ai                           AI 訓練、測試與 ONNX 匯出
 data                         公開資料集放置位置
 ```
 
@@ -53,10 +55,11 @@ dotnet run --project tools/AoiInspector.DatasetEvaluator -- data/raw/KolektorSDD
 
 目前傳統影像基線在 1,004 張官方測試影像上得到 91.83% 準確率、58.18% 瑕疵召回率，平均核心處理時間約 0.90 ms。完整結果與限制記錄在 [`docs/BASELINE_RESULTS.md`](docs/BASELINE_RESULTS.md)。這組結果是後續 AI 模型必須超越的基準，不代表已達到生產部署標準。
 
+第一版 AI 模型在同一官方測試集上得到 95.02% 準確率、87.27% 瑕疵召回率與 73.38% 像素 Dice。匯出的 ONNX 模型在本機 CPU 上，中位純推論時間為 9.85 ms。完整設定、結果與限制記錄在 [`docs/AI_V1_RESULTS.md`](docs/AI_V1_RESULTS.md)。
+
 ## 後續版本
 
-1. 加入 KSDD2 批次匯入、標註比對與統計報表。
-2. 加入 OpenCV 影像前處理與檢測配方保存。
-3. 加入 ONNX AI 模型推論，與傳統方法交叉判定。
-4. 加入資料夾監看、連續檢測與 CSV 紀錄。
-5. 建立可重現的效能與準確率測試報告。
+1. 將選定的 ONNX 模型整合到桌面介面，提供 AI／傳統模式切換。
+2. 加入影像前處理與檢測配方保存。
+3. 加入資料夾監看、連續檢測與 CSV 紀錄。
+4. 針對完整端到端流程建立效能與準確率報告。
