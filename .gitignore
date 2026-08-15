@@ -1,0 +1,18 @@
+bin/
+obj/
+.vs/
+.venv/
+__pycache__/
+.pytest_cache/
+*.user
+*.suo
+
+# Public datasets are downloaded separately and are not redistributed.
+data/raw/*
+!data/raw/.gitkeep
+
+# Generated inspection results and trained models.
+outputs/
+models/*.onnx
+models/*.engine
+ai/checkpoints/
