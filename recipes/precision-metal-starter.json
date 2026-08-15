@@ -1,0 +1,20 @@
+{
+  "SchemaVersion": 1,
+  "Name": "精密金屬表面－起始配方",
+  "Description": "供離線驗證使用的起始值；上線前須依鏡頭、治具、光源與量測標準重新校正。",
+  "Mode": "Hybrid",
+  "HybridRule": "AnyNg",
+  "TraditionalSettings": {
+    "BlurRadius": 7,
+    "DifferenceThreshold": 32,
+    "MinimumDefectArea": 12,
+    "RejectAreaRatio": 0.001
+  },
+  "AiSettings": {
+    "PixelProbabilityThreshold": 0.5,
+    "RejectAreaRatio": 0.0005
+  },
+  "MicrometersPerPixel": 5.0,
+  "CameraProfile": "同軸相機－待現場校正",
+  "LightingProfile": "低角度環形光－待現場驗證"
+}

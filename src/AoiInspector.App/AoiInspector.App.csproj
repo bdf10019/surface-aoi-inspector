@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AoiInspector.Ai\AoiInspector.Ai.csproj" />
     <ProjectReference Include="..\AoiInspector.Core\AoiInspector.Core.csproj" />
+    <ProjectReference Include="..\AoiInspector.Workflows\AoiInspector.Workflows.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="Exists('..\..\models\local\ksdd2-v1\surface_defect_segmenter.onnx')">

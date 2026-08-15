@@ -2,11 +2,12 @@
 
 ## Runtime design
 
-The desktop application supports three modes:
+The desktop application supports four modes:
 
 - Traditional: local-background difference detector at the original image resolution.
 - AI: LR-ASPP MobileNetV3 segmentation through ONNX Runtime CPU.
 - Compare: both inspectors run on the same image and disagreements are flagged for review.
+- Hybrid: both inspectors run and a recipe-selected rule produces the final verdict and review flag.
 
 AI inspection runs on a worker thread so model loading and inference do not block the WPF interface. One `InferenceSession` is created lazily and reused until the window closes.
 

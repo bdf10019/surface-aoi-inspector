@@ -14,16 +14,22 @@
 - 顯示像素級瑕疵遮罩與處理時間
 - 核心檢測邏輯與桌面介面分離
 - 可重現的 GPU 訓練、獨立測試與 ONNX 匯出流程
-- 桌面介面支援傳統、AI 與比較三種檢測模式
+- 桌面介面支援傳統、AI、比較與融合判定四種模式
 - AI 推論在背景執行，模型缺失時提供明確提示
+- JSON 檢測配方可保存相機、光源、校正值與兩套演算法參數
+- 依校正值將瑕疵遮罩換算為 mm² 與瑕疵中心座標
+- 可選擇資料夾批次檢測，並輸出含判定原因與複核旗標的 CSV
+- 批次工作可安全停止；關閉視窗時會等待目前影像處理完成
 
 ## 專案結構
 
 ```text
 src/AoiInspector.Core        檢測演算法與資料模型
 src/AoiInspector.Ai          ONNX 前處理、推論與後處理
+src/AoiInspector.Workflows   配方、融合規則、尺寸換算與 CSV
 src/AoiInspector.App         Windows WPF 操作介面
 tests/AoiInspector.SmokeTests 無外部相依的自動驗證
+tests/AoiInspector.WorkflowTests 工作流程規則自動驗證
 tools/AoiInspector.DatasetEvaluator 真實資料集批次評估工具
 tools/AoiInspector.AiDatasetEvaluator C# ONNX 批次評估工具
 ai                           AI 訓練、測試與 ONNX 匯出
@@ -48,6 +54,7 @@ dotnet run --project src/AoiInspector.App
 ```powershell
 dotnet run --project tests/AoiInspector.SmokeTests
 dotnet run --project tests/AoiInspector.AiSmokeTests
+dotnet run --project tests/AoiInspector.WorkflowTests
 ```
 
 執行 KSDD2 測試集評估：
@@ -74,8 +81,12 @@ dotnet run --project tools/AoiInspector.AiDatasetEvaluator
 
 桌面程式實際採用的 C#／ONNX Runtime 流程，在 1,004 張官方測試影像上得到 97.11% 準確率、84.55% 瑕疵召回率、88.57% 精確率與 91.60% 平衡準確率；完整整合方式記錄在 [`docs/DESKTOP_AI_INTEGRATION.md`](docs/DESKTOP_AI_INTEGRATION.md)。
 
+## 實務工作流程
+
+程式內建「精密金屬表面－起始配方」，也提供可直接載入的 [`recipes/precision-metal-starter.json`](recipes/precision-metal-starter.json)。其中 `MicrometersPerPixel` 是展示用起始值，不是量測認證；實機使用前必須以標定板配合實際鏡頭、工作距離與影像解析度重新校正。完整操作與上線邊界見 [`docs/PRODUCTION_WORKFLOW.md`](docs/PRODUCTION_WORKFLOW.md)。
+
 ## 後續版本
 
-1. 加入檢測配方保存與載入。
-2. 加入資料夾監看、連續檢測與 CSV 紀錄。
+1. 加入 ROI、標定板校正精靈與配方版號管理。
+2. 抽象化工業相機觸發、PLC 握手與資料夾監看介面。
 3. 製作可直接解壓執行的 Release 套件與展示素材。
