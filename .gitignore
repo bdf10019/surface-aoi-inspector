@@ -14,7 +14,7 @@ data/raw/*
 
 # Generated inspection results and trained models.
 outputs/
-models/*.onnx
-models/*.engine
+models/local/*
+!models/local/.gitkeep
 ai/checkpoints/
 ai/runs/

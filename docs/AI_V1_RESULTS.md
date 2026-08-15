@@ -58,5 +58,20 @@ AI v1 improves defect recall by 29.09 percentage points while retaining the same
 - CPU timing was measured on one machine and is not a deployment guarantee.
 - Repeated tuning must use training and validation data, not the official test split.
 
-The next implementation step is to integrate the selected ONNX model into the desktop application behind a configurable AI/traditional mode, then measure the complete end-to-end pipeline.
+The selected ONNX model was therefore integrated into the desktop application behind configurable AI, traditional, and comparison modes. The deployed pipeline measurement is recorded below.
 
+## Desktop C# deployment validation
+
+The selected model was subsequently integrated with Microsoft ONNX Runtime 1.28.0. The deployed C# pipeline was run over all 1,004 official test images using the same probability and area thresholds.
+
+| Metric | Python reference | C# desktop pipeline |
+|---|---:|---:|
+| Accuracy | 95.02% | 97.11% |
+| Precision | 72.73% | 88.57% |
+| Defect recall | 87.27% | 84.55% |
+| Specificity | 95.97% | 98.66% |
+| Balanced accuracy | 91.62% | 91.60% |
+
+The C# confusion matrix is TP 93, TN 882, FP 12, and FN 17. The small operating-point shift is caused by the deployed bilinear resize differing from Torchvision's antialiased resize. Balanced accuracy differs by only 0.02 percentage points, but deployment acceptance should use the C# figures because they represent the executable application.
+
+The mean C# ONNX inference time was 9.16 ms per image, with an 8.95 ms median and 10.43 ms 95th percentile. Full dataset processing, including file decoding, preprocessing, post-processing, and progress reporting, took 33.81 seconds.

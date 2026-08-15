@@ -1,12 +1,15 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/AoiInspector.Ai/AoiInspector.Ai.csproj" />
     <Project Path="src/AoiInspector.App/AoiInspector.App.csproj" />
     <Project Path="src/AoiInspector.Core/AoiInspector.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/AoiInspector.AiSmokeTests/AoiInspector.AiSmokeTests.csproj" />
     <Project Path="tests/AoiInspector.SmokeTests/AoiInspector.SmokeTests.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/AoiInspector.AiDatasetEvaluator/AoiInspector.AiDatasetEvaluator.csproj" />
     <Project Path="tools/AoiInspector.DatasetEvaluator/AoiInspector.DatasetEvaluator.csproj" />
   </Folder>
 </Solution>

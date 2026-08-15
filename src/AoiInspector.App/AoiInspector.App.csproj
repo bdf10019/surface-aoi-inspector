@@ -1,7 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\AoiInspector.Ai\AoiInspector.Ai.csproj" />
     <ProjectReference Include="..\AoiInspector.Core\AoiInspector.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('..\..\models\local\ksdd2-v1\surface_defect_segmenter.onnx')">
+    <Content Include="..\..\models\local\ksdd2-v1\surface_defect_segmenter.onnx"
+             Link="Models\ksdd2-v1\surface_defect_segmenter.onnx"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\models\local\ksdd2-v1\surface_defect_segmenter.onnx.data"
+             Link="Models\ksdd2-v1\surface_defect_segmenter.onnx.data"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>
