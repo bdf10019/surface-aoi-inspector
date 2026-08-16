@@ -31,4 +31,20 @@ public sealed class RgbImage
 
         return new GrayImage(Width, Height, gray);
     }
+
+    public RgbImage Crop(int x, int y, int width, int height)
+    {
+        if (x < 0 || y < 0 || width <= 0 || height <= 0 ||
+            x + width > Width || y + height > Height)
+            throw new ArgumentOutOfRangeException(nameof(x), "裁切範圍超出影像邊界。");
+
+        var cropped = new byte[width * height * 3];
+        for (var targetY = 0; targetY < height; targetY++)
+        {
+            var sourceOffset = (((y + targetY) * Width) + x) * 3;
+            var targetOffset = targetY * width * 3;
+            Array.Copy(Pixels, sourceOffset, cropped, targetOffset, width * 3);
+        }
+        return new RgbImage(width, height, cropped);
+    }
 }

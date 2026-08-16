@@ -1,4 +1,5 @@
 using System.Text;
+using AoiInspector.Core;
 using AoiInspector.Workflows;
 
 var testDirectory = Path.Combine(Path.GetTempPath(), $"aoi-workflow-tests-{Guid.NewGuid():N}");
@@ -13,6 +14,7 @@ try
     TestInputFiltering(testDirectory);
     TestArtifactHash(testDirectory);
     await TestBatchRunner(testDirectory);
+    TestRoiAndCalibration();
     if (args.Length > 0)
     {
         var sampleRecipe = RecipeFile.Load(args[0]);
@@ -49,13 +51,21 @@ static void TestPhysicalMeasurement()
 static void TestRecipeRoundTrip(string directory)
 {
     var path = Path.Combine(directory, "recipe.json");
-    var source = RecipeCatalog.BuiltIn[0] with { Name = "測試配方" };
+    var source = RecipeCatalog.BuiltIn[0] with
+    {
+        Name = "測試配方",
+        Roi = new InspectionRoi(0.1, 0.2, 0.7, 0.6),
+        CalibrationReference = "CAL-001",
+        ScaleCalibratedAt = DateTimeOffset.Parse("2026-01-01T00:00:00+08:00")
+    };
     RecipeFile.Save(path, source);
     var loaded = RecipeFile.Load(path);
     Assert(loaded.Name == source.Name, "配方名稱往返後不一致");
     Assert(loaded.RecipeVersion == source.RecipeVersion, "配方版本往返後不一致");
     Assert(loaded.Mode == InspectionMode.Hybrid, "配方模式往返後不一致");
     Assert(loaded.TraditionalSettings.DifferenceThreshold == 32, "傳統參數往返後不一致");
+    Assert(loaded.Roi == source.Roi && loaded.CalibrationReference == "CAL-001",
+        "ROI 或尺度校正資訊往返後不一致");
     Assert(RecipeFile.ComputeSha256(source) == RecipeFile.ComputeSha256(loaded),
         "相同配方的雜湊應一致");
     Assert(RecipeFile.ComputeSha256(source) != RecipeFile.ComputeSha256(source with { ProductCode = "ANOTHER" }),
@@ -99,6 +109,8 @@ static void TestCsv(string directory)
     Assert(csv.Contains("source_sha256"), "CSV 缺少來源影像雜湊欄位");
     Assert(csv.Contains("model_graph_sha256"), "CSV 缺少模型雜湊欄位");
     Assert(csv.Contains("micrometers_per_pixel"), "CSV 缺少校正值欄位");
+    Assert(csv.Contains("roi_width"), "CSV 缺少 ROI 像素欄位");
+    Assert(csv.Contains("scale_calibrated_at"), "CSV 缺少尺度校正時間欄位");
     Assert(csv.Contains("IMAGE_PROCESSING_ERROR"), "CSV 缺少單檔錯誤紀錄");
     Assert(csv.Contains("\"decode failed, invalid header\""), "CSV 錯誤訊息未正確跳脫");
 }
@@ -186,6 +198,24 @@ static async Task TestBatchRunner(string directory)
         "取消後的部分 CSV 應包含已完成影像");
 }
 
+static void TestRoiAndCalibration()
+{
+    var roi = new InspectionRoi(0.25, 0.2, 0.5, 0.6);
+    var pixels = roi.ToPixelRoi(200, 100);
+    Assert(pixels == new PixelRoi(50, 20, 100, 60), "正規化 ROI 轉換錯誤");
+
+    var imagePixels = Enumerable.Range(0, 4 * 3 * 3).Select(value => (byte)value).ToArray();
+    var cropped = new RgbImage(4, 3, imagePixels).Crop(1, 1, 2, 1);
+    Assert(cropped.Width == 2 && cropped.Height == 1 && cropped.Pixels[0] == imagePixels[15],
+        "RGB ROI 裁切錯誤");
+
+    Assert(Math.Abs(ScaleCalibration.CalculateMicrometersPerPixel(10, 2000) - 5) < 1e-12,
+        "兩點尺度校正錯誤");
+    var measurement = MaskMeasurement.Measure([255], 1, 1, 10, 10, 5, 50, 20);
+    Assert(Math.Abs(measurement.CentroidXMillimeters!.Value - 0.275) < 1e-12,
+        "ROI 瑕疵中心未補償來源偏移");
+}
+
 static InspectionLogEntry CreateTestEntry(string fileName) => new(
     DateTimeOffset.Parse("2026-01-02T03:04:05+08:00"),
     "LOT-001",
@@ -193,6 +223,12 @@ static InspectionLogEntry CreateTestEntry(string fileName) => new(
     fileName,
     fileName,
     new string('b', 64),
+    100,
+    50,
+    0,
+    0,
+    100,
+    50,
     "測試配方",
     "1.2",
     new string('a', 64),
@@ -208,6 +244,8 @@ static InspectionLogEntry CreateTestEntry(string fileName) => new(
     "BOTH_OK",
     string.Empty,
     5,
+    "CAL-001",
+    DateTimeOffset.Parse("2026-01-01T00:00:00+08:00"),
     "camera-a",
     "light-a",
     0.01,

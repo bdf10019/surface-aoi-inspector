@@ -16,7 +16,15 @@
     "PixelProbabilityThreshold": 0.5,
     "RejectAreaRatio": 0.0005
   },
+  "Roi": {
+    "X": 0.0,
+    "Y": 0.0,
+    "Width": 1.0,
+    "Height": 1.0
+  },
   "MicrometersPerPixel": 5.0,
+  "CalibrationReference": "未執行",
+  "ScaleCalibratedAt": null,
   "CameraProfile": "同軸相機－待現場校正",
   "LightingProfile": "低角度環形光－待現場驗證"
 }

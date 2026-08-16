@@ -13,7 +13,9 @@ public static class MaskMeasurement
         int maskHeight,
         int sourceWidth,
         int sourceHeight,
-        double micrometersPerPixel)
+        double micrometersPerPixel,
+        int sourceOffsetX = 0,
+        int sourceOffsetY = 0)
     {
         if (maskWidth <= 0 || maskHeight <= 0 || mask.Length != maskWidth * maskHeight)
             throw new ArgumentException("遮罩尺寸與資料長度不一致。", nameof(mask));
@@ -26,24 +28,29 @@ public static class MaskMeasurement
         double sumX = 0;
         double sumY = 0;
         for (var y = 0; y < maskHeight; y++)
-        for (var x = 0; x < maskWidth; x++)
-        {
-            if (mask[(y * maskWidth) + x] == 0) continue;
-            count++;
-            sumX += x + 0.5;
-            sumY += y + 0.5;
-        }
+            for (var x = 0; x < maskWidth; x++)
+            {
+                if (mask[(y * maskWidth) + x] == 0) continue;
+                count++;
+                sumX += x + 0.5;
+                sumY += y + 0.5;
+            }
 
-        var sourcePixelsPerMaskPixel =
-            (sourceWidth / (double)maskWidth) * (sourceHeight / (double)maskHeight);
-        var area = count * sourcePixelsPerMaskPixel *
-            micrometersPerPixel * micrometersPerPixel / 1_000_000d;
+        var sourcePixelsPerMaskPixel = (sourceWidth / (double)maskWidth) *
+                                       (sourceHeight / (double)maskHeight);
+        var area = count *
+                   sourcePixelsPerMaskPixel *
+                   micrometersPerPixel *
+                   micrometersPerPixel /
+                   1_000_000d;
 
         if (count == 0)
             return new PhysicalMeasurement(area, null, null);
 
-        var centroidX = sumX / count * sourceWidth / maskWidth * micrometersPerPixel / 1000d;
-        var centroidY = sumY / count * sourceHeight / maskHeight * micrometersPerPixel / 1000d;
+        var centroidX = (sourceOffsetX + sumX / count * sourceWidth / maskWidth) *
+            micrometersPerPixel / 1000d;
+        var centroidY = (sourceOffsetY + sumY / count * sourceHeight / maskHeight) *
+            micrometersPerPixel / 1000d;
         return new PhysicalMeasurement(area, centroidX, centroidY);
     }
 }

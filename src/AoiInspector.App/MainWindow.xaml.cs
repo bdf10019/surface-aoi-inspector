@@ -16,8 +16,9 @@ public partial class MainWindow : Window
     private readonly SurfaceDefectInspector _traditionalInspector = new();
     private OnnxSurfaceDefectInspector? _aiInspector;
     private RgbImage? _currentColorImage;
-    private GrayImage? _currentGrayImage;
     private string _recipeDescription = string.Empty;
+    private string _calibrationReference = "未執行";
+    private DateTimeOffset? _scaleCalibratedAt;
     private CancellationTokenSource? _operationCts;
     private bool _isRunning;
     private bool _closeRequested;
@@ -48,8 +49,8 @@ public partial class MainWindow : Window
         {
             var bitmap = LoadBitmap(dialog.FileName);
             _currentColorImage = ToRgbImage(bitmap);
-            _currentGrayImage = _currentColorImage.ToGrayImage();
             OriginalImage.Source = bitmap;
+            OriginalTitleText.Text = "原始影像";
             MaskImage.Source = null;
             ResetMaskHeading();
             SetReady($"已載入 {bitmap.PixelWidth} × {bitmap.PixelHeight} 影像");
@@ -58,6 +59,33 @@ public partial class MainWindow : Window
     }
 
     private void CreateDemo_Click(object sender, RoutedEventArgs e) => LoadDemoImage();
+
+    private void OpenCalibration_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var currentScale = ParseDouble(MicrometersPerPixelTextBox.Text, "像素尺寸");
+            var dialog = new CalibrationWindow(currentScale) { Owner = this };
+            if (dialog.ShowDialog() != true) return;
+
+            MicrometersPerPixelTextBox.Text =
+                dialog.CalculatedMicrometersPerPixel.ToString("0.########", CultureInfo.InvariantCulture);
+            _calibrationReference = dialog.CalibrationReference;
+            _scaleCalibratedAt = DateTimeOffset.Now;
+            UpdateCalibrationStatus();
+            SetReady($"尺度校正已套用：{dialog.CalculatedMicrometersPerPixel:0.####} µm/px");
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex.GetBaseException().Message);
+        }
+    }
+
+    private void ResetRoi_Click(object sender, RoutedEventArgs e)
+    {
+        ApplyRoi(InspectionRoi.FullFrame);
+        SetReady("ROI 已重設為全畫面。");
+    }
 
     private void ApplyBuiltInRecipe_Click(object sender, RoutedEventArgs e)
     {
@@ -103,7 +131,7 @@ public partial class MainWindow : Window
 
     private async void Inspect_Click(object sender, RoutedEventArgs e)
     {
-        if (_currentColorImage is null || _currentGrayImage is null)
+        if (_currentColorImage is null)
         {
             ShowError("請先載入一張影像。");
             return;
@@ -115,7 +143,7 @@ public partial class MainWindow : Window
             BeginOperation("正在執行單張檢測…");
             var token = _operationCts!.Token;
             var execution = await Task.Run(
-                () => ExecuteInspection(_currentColorImage, _currentGrayImage, recipe), token);
+                () => ExecuteInspection(_currentColorImage, recipe), token);
             token.ThrowIfCancellationRequested();
             ShowExecution(execution, recipe);
         }
@@ -176,7 +204,7 @@ public partial class MainWindow : Window
                     {
                         var sourceSha256 = InspectionArtifactHash.ComputeSha256(path);
                         var color = LoadRgbImage(path);
-                        var execution = ExecuteInspection(color, color.ToGrayImage(), recipe);
+                        var execution = ExecuteInspection(color, recipe);
                         return (Execution: execution, SourceSha256: sourceSha256);
                     }, cancellationToken);
                     return CreateLogEntry(
@@ -217,9 +245,13 @@ public partial class MainWindow : Window
         _operationCts?.Cancel();
     }
 
-    private InspectionExecution ExecuteInspection(
-        RgbImage colorImage, GrayImage grayImage, InspectionRecipe recipe)
+    private InspectionExecution ExecuteInspection(RgbImage sourceImage, InspectionRecipe recipe)
     {
+        var roi = recipe.Roi.ToPixelRoi(sourceImage.Width, sourceImage.Height);
+        var colorImage = recipe.Roi.IsFullFrame
+            ? sourceImage
+            : sourceImage.Crop(roi.X, roi.Y, roi.Width, roi.Height);
+        var grayImage = colorImage.ToGrayImage();
         InspectionResult? traditional = null;
         AiInspectionResult? ai = null;
         if (recipe.Mode is InspectionMode.Traditional or InspectionMode.Compare or InspectionMode.Hybrid)
@@ -244,12 +276,15 @@ public partial class MainWindow : Window
 
         var traditionalMeasurement = traditional is null ? null : MaskMeasurement.Measure(
             traditional.DefectMask, grayImage.Width, grayImage.Height,
-            grayImage.Width, grayImage.Height, recipe.MicrometersPerPixel);
+            grayImage.Width, grayImage.Height, recipe.MicrometersPerPixel,
+            roi.X, roi.Y);
         var aiMeasurement = ai is null ? null : MaskMeasurement.Measure(
             ai.DefectMask, ai.MaskWidth, ai.MaskHeight,
-            grayImage.Width, grayImage.Height, recipe.MicrometersPerPixel);
+            grayImage.Width, grayImage.Height, recipe.MicrometersPerPixel,
+            roi.X, roi.Y);
         return new InspectionExecution(traditional, ai, decision,
-            traditionalMeasurement, aiMeasurement, grayImage.Width, grayImage.Height);
+            traditionalMeasurement, aiMeasurement, grayImage.Width, grayImage.Height,
+            sourceImage.Width, sourceImage.Height, roi, colorImage);
     }
 
     private static InspectionLogEntry CreateLogEntry(
@@ -267,6 +302,12 @@ public partial class MainWindow : Window
             Path.GetFileName(path),
             RelativePath(inputRoot, path),
             sourceSha256,
+            execution.FullSourceWidth,
+            execution.FullSourceHeight,
+            execution.Roi.X,
+            execution.Roi.Y,
+            execution.Roi.Width,
+            execution.Roi.Height,
             recipe.Name,
             recipe.RecipeVersion,
             recipeSha256,
@@ -281,6 +322,8 @@ public partial class MainWindow : Window
             execution.Decision.ReasonCode,
             string.Empty,
             recipe.MicrometersPerPixel,
+            recipe.CalibrationReference,
+            recipe.ScaleCalibratedAt,
             recipe.CameraProfile,
             recipe.LightingProfile,
             execution.Traditional?.DefectAreaRatio,
@@ -305,6 +348,12 @@ public partial class MainWindow : Window
             Path.GetFileName(path),
             RelativePath(inputRoot, path),
             sourceSha256,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
             recipe.Name,
             recipe.RecipeVersion,
             recipeSha256,
@@ -320,6 +369,8 @@ public partial class MainWindow : Window
             "IMAGE_PROCESSING_ERROR",
             errorMessage,
             recipe.MicrometersPerPixel,
+            recipe.CalibrationReference,
+            recipe.ScaleCalibratedAt,
             recipe.CameraProfile,
             recipe.LightingProfile,
             null,
@@ -344,6 +395,10 @@ public partial class MainWindow : Window
 
     private void ShowExecution(InspectionExecution execution, InspectionRecipe recipe)
     {
+        OriginalImage.Source = CreateRgbBitmap(execution.InspectionImage);
+        OriginalTitleText.Text = recipe.Roi.IsFullFrame
+            ? "原始影像／全畫面 ROI"
+            : $"檢測 ROI（{execution.Roi.Width} × {execution.Roi.Height} px）";
         SetVerdict(execution.Decision);
         switch (recipe.Mode)
         {
@@ -404,7 +459,14 @@ public partial class MainWindow : Window
             CameraProfile = CameraProfileTextBox.Text.Trim(),
             LightingProfile = LightingProfileTextBox.Text.Trim(),
             TraditionalSettings = ParseTraditionalSettings(),
-            AiSettings = ParseAiSettings()
+            AiSettings = ParseAiSettings(),
+            Roi = new InspectionRoi(
+                ParseDouble(RoiXTextBox.Text, "ROI X") / 100d,
+                ParseDouble(RoiYTextBox.Text, "ROI Y") / 100d,
+                ParseDouble(RoiWidthTextBox.Text, "ROI 寬度") / 100d,
+                ParseDouble(RoiHeightTextBox.Text, "ROI 高度") / 100d),
+            CalibrationReference = _calibrationReference,
+            ScaleCalibratedAt = _scaleCalibratedAt
         };
         recipe.Validate();
         return recipe;
@@ -416,6 +478,10 @@ public partial class MainWindow : Window
         RecipeNameTextBox.Text = recipe.Name;
         RecipeVersionTextBox.Text = recipe.RecipeVersion;
         ProductCodeTextBox.Text = recipe.ProductCode;
+        ApplyRoi(recipe.Roi);
+        _calibrationReference = recipe.CalibrationReference;
+        _scaleCalibratedAt = recipe.ScaleCalibratedAt;
+        UpdateCalibrationStatus();
         InspectionModeComboBox.SelectedIndex = (int)recipe.Mode;
         HybridRuleComboBox.SelectedIndex = (int)recipe.HybridRule;
         MicrometersPerPixelTextBox.Text = recipe.MicrometersPerPixel.ToString("0.####", CultureInfo.InvariantCulture);
@@ -426,6 +492,24 @@ public partial class MainWindow : Window
         RejectRatioTextBox.Text = (recipe.TraditionalSettings.RejectAreaRatio * 100).ToString("0.####", CultureInfo.InvariantCulture);
         AiProbabilityTextBox.Text = recipe.AiSettings.PixelProbabilityThreshold.ToString("0.####", CultureInfo.InvariantCulture);
         AiRejectRatioTextBox.Text = (recipe.AiSettings.RejectAreaRatio * 100).ToString("0.####", CultureInfo.InvariantCulture);
+    }
+
+    private void ApplyRoi(InspectionRoi roi)
+    {
+        RoiXTextBox.Text = (roi.X * 100).ToString("0.####", CultureInfo.InvariantCulture);
+        RoiYTextBox.Text = (roi.Y * 100).ToString("0.####", CultureInfo.InvariantCulture);
+        RoiWidthTextBox.Text = (roi.Width * 100).ToString("0.####", CultureInfo.InvariantCulture);
+        RoiHeightTextBox.Text = (roi.Height * 100).ToString("0.####", CultureInfo.InvariantCulture);
+    }
+
+    private void UpdateCalibrationStatus()
+    {
+        CalibrationStatusText.Text = _scaleCalibratedAt.HasValue
+            ? $"尺度校正：{_calibrationReference}／{_scaleCalibratedAt:yyyy-MM-dd HH:mm:ss zzz}"
+            : "尺度校正：未執行（目前比例僅為起始值）";
+        CalibrationStatusText.Foreground = _scaleCalibratedAt.HasValue
+            ? Brushes.LightGreen
+            : Brushes.LightCoral;
     }
 
     private InspectionSettings ParseTraditionalSettings() => new()
@@ -466,9 +550,9 @@ public partial class MainWindow : Window
             }
         }
         _currentColorImage = new RgbImage(width, height, rgb);
-        _currentGrayImage = _currentColorImage.ToGrayImage();
         OriginalImage.Source = BitmapSource.Create(
             width, height, 96, 96, PixelFormats.Rgb24, null, rgb, width * 3);
+        OriginalTitleText.Text = "原始影像";
         MaskImage.Source = null; ResetMaskHeading(); SetReady("已建立示範表面與刮痕");
     }
 
@@ -480,6 +564,10 @@ public partial class MainWindow : Window
     }
 
     private static RgbImage LoadRgbImage(string path) => ToRgbImage(LoadBitmap(path));
+
+    private static BitmapSource CreateRgbBitmap(RgbImage image) => BitmapSource.Create(
+        image.Width, image.Height, 96, 96, PixelFormats.Rgb24, null,
+        image.Pixels, image.Width * 3);
 
     private static RgbImage ToRgbImage(BitmapSource source)
     {
@@ -637,7 +725,10 @@ public partial class MainWindow : Window
     private sealed record InspectionExecution(
         InspectionResult? Traditional, AiInspectionResult? Ai, FusionDecision Decision,
         PhysicalMeasurement? TraditionalMeasurement, PhysicalMeasurement? AiMeasurement,
-        int SourceWidth, int SourceHeight);
+        int SourceWidth, int SourceHeight,
+        int FullSourceWidth, int FullSourceHeight,
+        PixelRoi Roi,
+        RgbImage InspectionImage);
 
     private sealed record InspectionRuntimeIdentity(
         string ApplicationVersion,

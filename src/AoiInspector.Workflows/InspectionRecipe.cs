@@ -14,7 +14,10 @@ public sealed record InspectionRecipe
     public HybridDecisionRule HybridRule { get; init; } = HybridDecisionRule.AnyNg;
     public InspectionSettings TraditionalSettings { get; init; } = new();
     public AiInspectionSettings AiSettings { get; init; } = new();
+    public InspectionRoi Roi { get; init; } = InspectionRoi.FullFrame;
     public double MicrometersPerPixel { get; init; } = 5.0;
+    public string CalibrationReference { get; init; } = "未執行";
+    public DateTimeOffset? ScaleCalibratedAt { get; init; }
     public string CameraProfile { get; init; } = "待現場設定";
     public string LightingProfile { get; init; } = "待現場設定";
 
@@ -32,8 +35,13 @@ public sealed record InspectionRecipe
             throw new InvalidDataException("檢測模式無效。");
         if (!Enum.IsDefined(HybridRule))
             throw new InvalidDataException("融合規則無效。");
+        if (Roi is null)
+            throw new InvalidDataException("ROI 不可為空。");
+        Roi.Validate();
         if (MicrometersPerPixel <= 0 || !double.IsFinite(MicrometersPerPixel))
             throw new InvalidDataException("像素尺寸必須是大於零的有限數值。");
+        if (ScaleCalibratedAt.HasValue && string.IsNullOrWhiteSpace(CalibrationReference))
+            throw new InvalidDataException("完成尺度校正後必須填寫校正參考識別。");
         if (TraditionalSettings.BlurRadius < 0)
             throw new InvalidDataException("模糊半徑不可小於零。");
         if (TraditionalSettings.DifferenceThreshold is < 0 or > 255)
