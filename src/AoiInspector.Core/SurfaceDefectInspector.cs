@@ -4,6 +4,8 @@ namespace AoiInspector.Core;
 
 public sealed class SurfaceDefectInspector
 {
+    public const string AlgorithmVersion = "local-background-difference-v1";
+
     public InspectionResult Inspect(GrayImage image, InspectionSettings settings)
     {
         Validate(settings);

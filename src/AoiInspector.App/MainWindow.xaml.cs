@@ -159,60 +159,51 @@ public partial class MainWindow : Window
 
             BeginOperation($"準備批次檢測，共 {files.Count} 張…");
             var token = _operationCts!.Token;
-            var entries = new List<InspectionLogEntry>();
             var recipeSha256 = RecipeFile.ComputeSha256(recipe);
-            using var csvWriter = InspectionCsv.CreateWriter(saveDialog.FileName);
-            try
+            var runtime = CreateRuntimeIdentity(recipe);
+            var progress = new Progress<BatchInspectionProgress>(item =>
             {
-                for (var index = 0; index < files.Count; index++)
-                {
-                    token.ThrowIfCancellationRequested();
-                    StatusText.Text = "BATCH";
-                    DetailText.Text = $"{index + 1} / {files.Count}　{Path.GetFileName(files[index])}";
-                    var path = files[index];
-                    try
-                    {
-                        var execution = await Task.Run(() =>
-                        {
-                            var color = LoadRgbImage(path);
-                            return ExecuteInspection(color, color.ToGrayImage(), recipe);
-                        }, token);
-                        var entry = CreateLogEntry(
-                            path, inputRoot, batchId, recipeSha256, recipe, execution);
-                        entries.Add(entry);
-                        csvWriter.Write(entry);
-                        token.ThrowIfCancellationRequested();
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        var entry = CreateErrorLogEntry(
-                            path, inputRoot, batchId, recipeSha256, recipe,
-                            ex.GetBaseException().Message);
-                        entries.Add(entry);
-                        csvWriter.Write(entry);
-                    }
-                }
-
-                var errors = entries.Count(entry =>
-                    entry.ProcessingStatus == InspectionProcessingStatus.Error);
-                var ng = entries.Count(entry =>
-                    entry.ProcessingStatus == InspectionProcessingStatus.Completed &&
-                    entry.Verdict == InspectionVerdict.Ng);
-                var review = entries.Count(entry => entry.RequiresReview);
-                StatusText.Text = ng == 0 && errors == 0 ? "BATCH OK" : "BATCH DONE";
-                StatusText.Foreground = ng == 0 && errors == 0 ? Brushes.LimeGreen : Brushes.Gold;
+                StatusText.Text = "BATCH";
                 DetailText.Text =
-                    $"完成 {entries.Count} 張；NG {ng}、錯誤 {errors}、需複核 {review}。" +
-                    $"CSV：{Path.GetFileName(saveDialog.FileName)}";
-                TimingText.Text = $"總核心時間：{entries.Sum(entry => entry.ElapsedMilliseconds):F1} ms";
-            }
-            catch (OperationCanceledException)
+                    $"{item.CurrentIndex} / {item.TotalCount}　{Path.GetFileName(item.FilePath)}";
+            });
+            var result = await BatchInspectionRunner.RunAsync(
+                files,
+                saveDialog.FileName,
+                async (path, cancellationToken) =>
+                {
+                    var inspected = await Task.Run(() =>
+                    {
+                        var sourceSha256 = InspectionArtifactHash.ComputeSha256(path);
+                        var color = LoadRgbImage(path);
+                        var execution = ExecuteInspection(color, color.ToGrayImage(), recipe);
+                        return (Execution: execution, SourceSha256: sourceSha256);
+                    }, cancellationToken);
+                    return CreateLogEntry(
+                        path, inputRoot, batchId, recipeSha256, recipe, runtime,
+                        inspected.SourceSha256, inspected.Execution);
+                },
+                (path, ex) => CreateErrorLogEntry(
+                    path, inputRoot, batchId, recipeSha256, recipe, runtime,
+                    InspectionArtifactHash.TryComputeSha256(path), ex.Message),
+                progress,
+                token);
+
+            if (result.IsCancelled)
             {
-                ShowCancelled($"批次已停止；已寫入 {entries.Count} 筆並保留部分 CSV。");
+                ShowCancelled(
+                    $"批次已停止；已寫入 {result.Entries.Count} 筆並保留部分 CSV。");
+            }
+            else
+            {
+                StatusText.Text = result.IsOk ? "BATCH OK" : "BATCH DONE";
+                StatusText.Foreground = result.IsOk ? Brushes.LimeGreen : Brushes.Gold;
+                DetailText.Text =
+                    $"完成 {result.Entries.Count} 張；NG {result.NgCount}、" +
+                    $"錯誤 {result.ErrorCount}、需複核 {result.ReviewCount}。" +
+                    $"CSV：{Path.GetFileName(saveDialog.FileName)}";
+                TimingText.Text =
+                    $"總核心時間：{result.Entries.Sum(entry => entry.ElapsedMilliseconds):F1} ms";
             }
         }
         catch (Exception ex) { ShowError(ex.GetBaseException().Message); }
@@ -267,15 +258,23 @@ public partial class MainWindow : Window
         string batchId,
         string recipeSha256,
         InspectionRecipe recipe,
+        InspectionRuntimeIdentity runtime,
+        string sourceSha256,
         InspectionExecution execution) => new(
             DateTimeOffset.Now,
             batchId,
             recipe.ProductCode,
             Path.GetFileName(path),
             RelativePath(inputRoot, path),
+            sourceSha256,
             recipe.Name,
             recipe.RecipeVersion,
             recipeSha256,
+            runtime.ApplicationVersion,
+            runtime.TraditionalAlgorithmVersion,
+            runtime.AiAlgorithmVersion,
+            runtime.ModelGraphSha256,
+            runtime.ModelDataSha256,
             recipe.Mode,
             InspectionProcessingStatus.Completed,
             execution.Decision.Verdict, execution.Decision.RequiresReview,
@@ -297,15 +296,23 @@ public partial class MainWindow : Window
         string batchId,
         string recipeSha256,
         InspectionRecipe recipe,
+        InspectionRuntimeIdentity runtime,
+        string sourceSha256,
         string errorMessage) => new(
             DateTimeOffset.Now,
             batchId,
             recipe.ProductCode,
             Path.GetFileName(path),
             RelativePath(inputRoot, path),
+            sourceSha256,
             recipe.Name,
             recipe.RecipeVersion,
             recipeSha256,
+            runtime.ApplicationVersion,
+            runtime.TraditionalAlgorithmVersion,
+            runtime.AiAlgorithmVersion,
+            runtime.ModelGraphSha256,
+            runtime.ModelDataSha256,
             recipe.Mode,
             InspectionProcessingStatus.Error,
             InspectionVerdict.Review,
@@ -323,6 +330,17 @@ public partial class MainWindow : Window
 
     private static string RelativePath(string root, string path) =>
         Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
+
+    private static InspectionRuntimeIdentity CreateRuntimeIdentity(InspectionRecipe recipe)
+    {
+        var usesAi = recipe.Mode is InspectionMode.Ai or InspectionMode.Compare or InspectionMode.Hybrid;
+        return new InspectionRuntimeIdentity(
+            typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "unknown",
+            SurfaceDefectInspector.AlgorithmVersion,
+            OnnxSurfaceDefectInspector.PipelineVersion,
+            usesAi ? InspectionArtifactHash.ComputeSha256(ModelPath) : string.Empty,
+            usesAi ? InspectionArtifactHash.ComputeSha256(ModelPath + ".data") : string.Empty);
+    }
 
     private void ShowExecution(InspectionExecution execution, InspectionRecipe recipe)
     {
@@ -620,4 +638,11 @@ public partial class MainWindow : Window
         InspectionResult? Traditional, AiInspectionResult? Ai, FusionDecision Decision,
         PhysicalMeasurement? TraditionalMeasurement, PhysicalMeasurement? AiMeasurement,
         int SourceWidth, int SourceHeight);
+
+    private sealed record InspectionRuntimeIdentity(
+        string ApplicationVersion,
+        string TraditionalAlgorithmVersion,
+        string AiAlgorithmVersion,
+        string ModelGraphSha256,
+        string ModelDataSha256);
 }

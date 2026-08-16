@@ -6,6 +6,7 @@ namespace AoiInspector.Ai;
 
 public sealed class OnnxSurfaceDefectInspector : IDisposable
 {
+    public const string PipelineVersion = "lr-aspp-mobilenetv3-ksdd2-v1";
     public const int ModelWidth = 640;
     public const int ModelHeight = 256;
     public const string DefaultModelFileName = "surface_defect_segmenter.onnx";
@@ -147,17 +148,17 @@ public sealed class OnnxSurfaceDefectInspector : IDisposable
                 var x = current % width;
                 var y = current / width;
                 for (var offsetY = -1; offsetY <= 1; offsetY++)
-                for (var offsetX = -1; offsetX <= 1; offsetX++)
-                {
-                    if (offsetX == 0 && offsetY == 0) continue;
-                    var nextX = x + offsetX;
-                    var nextY = y + offsetY;
-                    if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) continue;
-                    var next = (nextY * width) + nextX;
-                    if (mask[next] == 0 || visited[next]) continue;
-                    visited[next] = true;
-                    queue[tail++] = next;
-                }
+                    for (var offsetX = -1; offsetX <= 1; offsetX++)
+                    {
+                        if (offsetX == 0 && offsetY == 0) continue;
+                        var nextX = x + offsetX;
+                        var nextY = y + offsetY;
+                        if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) continue;
+                        var next = (nextY * width) + nextX;
+                        if (mask[next] == 0 || visited[next]) continue;
+                        visited[next] = true;
+                        queue[tail++] = next;
+                    }
             }
         }
 

@@ -11,6 +11,8 @@ try
     TestRecipeRoundTrip(testDirectory);
     TestCsv(testDirectory);
     TestInputFiltering(testDirectory);
+    TestArtifactHash(testDirectory);
+    await TestBatchRunner(testDirectory);
     if (args.Length > 0)
     {
         var sampleRecipe = RecipeFile.Load(args[0]);
@@ -63,29 +65,13 @@ static void TestRecipeRoundTrip(string directory)
 static void TestCsv(string directory)
 {
     var path = Path.Combine(directory, "inspection.csv");
-    var entry = new InspectionLogEntry(
-        DateTimeOffset.Parse("2026-01-02T03:04:05+08:00"),
-        "LOT-001",
-        "PART-001",
-        "part,\"01\".png",
-        "nested/part,\"01\".png",
-        "測試配方",
-        "1.2",
-        new string('a', 64),
-        InspectionMode.Hybrid,
-        InspectionProcessingStatus.Completed,
-        InspectionVerdict.Review,
-        true,
-        "METHODS_DISAGREE",
-        string.Empty,
-        5,
-        "camera-a",
-        "light-a",
-        0.01,
-        0.02,
-        0.1,
-        0.2,
-        12.5);
+    var entry = CreateTestEntry("part,\"01\".png") with
+    {
+        SourceRelativePath = "nested/part,\"01\".png",
+        Verdict = InspectionVerdict.Review,
+        RequiresReview = true,
+        ReasonCode = "METHODS_DISAGREE"
+    };
 
     using (var writer = InspectionCsv.CreateWriter(path))
     {
@@ -110,6 +96,8 @@ static void TestCsv(string directory)
     Assert(csv.Contains("\"part,\"\"01\"\".png\""), "CSV 特殊字元未正確跳脫");
     Assert(csv.Contains("METHODS_DISAGREE"), "CSV 缺少判定原因");
     Assert(csv.Contains("recipe_sha256"), "CSV 缺少配方雜湊欄位");
+    Assert(csv.Contains("source_sha256"), "CSV 缺少來源影像雜湊欄位");
+    Assert(csv.Contains("model_graph_sha256"), "CSV 缺少模型雜湊欄位");
     Assert(csv.Contains("micrometers_per_pixel"), "CSV 缺少校正值欄位");
     Assert(csv.Contains("IMAGE_PROCESSING_ERROR"), "CSV 缺少單檔錯誤紀錄");
     Assert(csv.Contains("\"decode failed, invalid header\""), "CSV 錯誤訊息未正確跳脫");
@@ -134,6 +122,99 @@ static void TestInputFiltering(string directory)
     Assert(InspectionInputFilter.IsAnnotationImage("sample-mask.TIFF"),
         "標註遮罩檔名辨識失敗");
 }
+
+static void TestArtifactHash(string directory)
+{
+    var path = Path.Combine(directory, "hash.txt");
+    File.WriteAllText(path, "abc", new UTF8Encoding(false));
+    Assert(InspectionArtifactHash.ComputeSha256(path) ==
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "檔案 SHA-256 計算錯誤");
+}
+
+static async Task TestBatchRunner(string directory)
+{
+    var files = new[] { "good.png", "broken.png", "review.png" };
+    var path = Path.Combine(directory, "batch-runner.csv");
+    var result = await BatchInspectionRunner.RunAsync(
+        files,
+        path,
+        (file, _) => file switch
+        {
+            "broken.png" => Task.FromException<InspectionLogEntry>(
+                new InvalidDataException("broken input")),
+            "review.png" => Task.FromResult(CreateTestEntry(file) with
+            {
+                Verdict = InspectionVerdict.Review,
+                RequiresReview = true,
+                ReasonCode = "METHODS_DISAGREE"
+            }),
+            _ => Task.FromResult(CreateTestEntry(file))
+        },
+        (file, ex) => CreateTestEntry(file) with
+        {
+            ProcessingStatus = InspectionProcessingStatus.Error,
+            Verdict = InspectionVerdict.Review,
+            RequiresReview = true,
+            ReasonCode = "IMAGE_PROCESSING_ERROR",
+            ErrorMessage = ex.Message
+        },
+        null,
+        CancellationToken.None);
+
+    Assert(result.Entries.Count == 3 && result.ErrorCount == 1,
+        "單檔錯誤後批次應繼續處理");
+    Assert(!result.IsOk && result.ReviewCount == 2,
+        "含複核或錯誤的批次不可標示為 OK");
+
+    var cancelPath = Path.Combine(directory, "batch-cancel.csv");
+    using var cancellation = new CancellationTokenSource();
+    var cancelled = await BatchInspectionRunner.RunAsync(
+        ["completed-before-cancel.png", "never-started.png"],
+        cancelPath,
+        (file, _) =>
+        {
+            cancellation.Cancel();
+            return Task.FromResult(CreateTestEntry(file));
+        },
+        (file, ex) => throw new InvalidOperationException("不應建立錯誤紀錄", ex),
+        null,
+        cancellation.Token);
+    Assert(cancelled.IsCancelled && cancelled.Entries.Count == 1,
+        "取消前已完成的目前影像應先寫入紀錄");
+    Assert(File.ReadAllText(cancelPath).Contains("completed-before-cancel.png"),
+        "取消後的部分 CSV 應包含已完成影像");
+}
+
+static InspectionLogEntry CreateTestEntry(string fileName) => new(
+    DateTimeOffset.Parse("2026-01-02T03:04:05+08:00"),
+    "LOT-001",
+    "PART-001",
+    fileName,
+    fileName,
+    new string('b', 64),
+    "測試配方",
+    "1.2",
+    new string('a', 64),
+    "0.3.0",
+    "traditional-v1",
+    "ai-v1",
+    new string('c', 64),
+    new string('d', 64),
+    InspectionMode.Hybrid,
+    InspectionProcessingStatus.Completed,
+    InspectionVerdict.Ok,
+    false,
+    "BOTH_OK",
+    string.Empty,
+    5,
+    "camera-a",
+    "light-a",
+    0.01,
+    0.02,
+    0.1,
+    0.2,
+    12.5);
 
 static void Assert(bool condition, string message)
 {
