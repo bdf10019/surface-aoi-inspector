@@ -1,0 +1,33 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore AoiInspector.slnx
+
+      - name: Build Release
+        run: dotnet build AoiInspector.slnx -c Release --no-restore
+
+      - name: Run traditional smoke tests
+        run: dotnet run --project tests/AoiInspector.SmokeTests -c Release --no-build
+
+      - name: Run workflow tests
+        run: dotnet run --project tests/AoiInspector.WorkflowTests -c Release --no-build -- recipes/precision-metal-starter.json

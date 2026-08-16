@@ -44,24 +44,40 @@ models                       本機模型準備說明
 data                         公開資料集放置位置
 ```
 
-## 執行
+## 快速開始
 
 需求：Windows 與 .NET 10 SDK。
 
 ```powershell
-.\scripts\Prepare-AiModel.ps1
+dotnet restore AoiInspector.slnx
 dotnet build AoiInspector.slnx
 dotnet run --project src/AoiInspector.App
 ```
 
-若尚未準備 AI 模型，程式仍可使用傳統模式；選擇 AI 模式時會顯示模型缺失訊息。
+GitHub 原始碼不包含公開資料集、訓練輸出或 ONNX 權重。全新下載的專案仍可直接啟動，使用傳統模式、示範影像、ROI、尺度校正、配方與批次追溯功能；選擇 AI 模式時會顯示模型缺失訊息。
+
+## 啟用 AI
+
+若本機已有經過驗證的 `ksdd2-v1` ONNX graph 與 external data：
+
+```powershell
+.\scripts\Prepare-AiModel.ps1
+dotnet build AoiInspector.slnx
+```
+
+預設準備腳本只接受文件中記錄的模型 SHA-256，避免不明權重被誤當成已驗證版本。若要從公開資料集自行訓練新的模型，請先依 [`ai/README.md`](ai/README.md) 建立環境、下載資料並完成訓練；自行產生的權重不等同於本專案記錄的評估版本。
 
 驗證核心演算法：
 
 ```powershell
 dotnet run --project tests/AoiInspector.SmokeTests
+dotnet run --project tests/AoiInspector.WorkflowTests -- recipes/precision-metal-starter.json
+```
+
+安裝 AI 模型後再執行：
+
+```powershell
 dotnet run --project tests/AoiInspector.AiSmokeTests
-dotnet run --project tests/AoiInspector.WorkflowTests
 ```
 
 執行 KSDD2 測試集評估：

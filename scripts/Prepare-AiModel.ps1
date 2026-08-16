@@ -1,6 +1,7 @@
 param(
     [string]$SourceDirectory = (Join-Path $PSScriptRoot "..\ai\runs\ksdd2-v1"),
-    [string]$DestinationDirectory = (Join-Path $PSScriptRoot "..\models\local\ksdd2-v1")
+    [string]$DestinationDirectory = (Join-Path $PSScriptRoot "..\models\local\ksdd2-v1"),
+    [switch]$AllowUnverifiedArtifacts
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,11 +21,12 @@ foreach ($fileName in $expected.Keys) {
     }
 
     $actualHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
-    if ($actualHash -ne $expected[$fileName]) {
+    if (-not $AllowUnverifiedArtifacts -and $actualHash -ne $expected[$fileName]) {
         throw "Unexpected SHA-256 for $fileName. Expected $($expected[$fileName]), got $actualHash"
     }
 
     Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $DestinationDirectory $fileName) -Force
+    Write-Host "$fileName SHA-256: $actualHash"
 }
 
 Write-Host "AI model prepared at $DestinationDirectory"

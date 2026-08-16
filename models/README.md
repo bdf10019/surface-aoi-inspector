@@ -6,7 +6,9 @@ Trained model files are kept under `models/local` and excluded from Git. Prepare
 .\scripts\Prepare-AiModel.ps1
 ```
 
-The script copies both the ONNX graph and its external data file from `ai/runs/ksdd2-v1`, then verifies the selected model hashes. The application still runs in traditional mode when no AI model is installed and shows a clear message if AI mode is selected.
+The script copies both the ONNX graph and its external data file from `ai/runs/ksdd2-v1`, then verifies the selected model hashes. The selected files are not redistributed in this repository. The application still runs in traditional mode when no AI model is installed and shows a clear message if AI mode is selected.
+
+For a model trained locally from the reproducible pipeline, use `-AllowUnverifiedArtifacts` explicitly. This permits a different hash but does not treat that model as the evaluated release artifact; validate it separately before use.
 
 Selected model hashes:
 
