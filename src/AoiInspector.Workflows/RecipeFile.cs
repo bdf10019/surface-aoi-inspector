@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -24,6 +26,16 @@ public static class RecipeFile
     public static void Save(string path, InspectionRecipe recipe)
     {
         recipe.Validate();
-        File.WriteAllText(path, JsonSerializer.Serialize(recipe, Options));
+        File.WriteAllText(path, Serialize(recipe));
     }
+
+    public static string ComputeSha256(InspectionRecipe recipe)
+    {
+        recipe.Validate();
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(Serialize(recipe)));
+        return Convert.ToHexStringLower(bytes);
+    }
+
+    private static string Serialize(InspectionRecipe recipe) =>
+        JsonSerializer.Serialize(recipe, Options);
 }

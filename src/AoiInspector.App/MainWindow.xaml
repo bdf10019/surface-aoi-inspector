@@ -24,6 +24,11 @@
             <Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="9,7"/>
             <Setter Property="Margin" Value="0,4,0,12"/>
         </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#DCE6F2"/>
+            <Setter Property="FontFamily" Value="Microsoft JhengHei UI"/>
+            <Setter Property="Margin" Value="0,3,0,8"/>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="24">
@@ -44,10 +49,20 @@
                             <TextBlock Text="配方名稱"/><TextBox x:Name="RecipeNameTextBox"/>
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0"><TextBlock Text="配方版本"/><TextBox x:Name="RecipeVersionTextBox"/></StackPanel>
+                                <StackPanel Grid.Column="2"><TextBlock Text="料號"/><TextBox x:Name="ProductCodeTextBox"/></StackPanel>
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions>
                                 <Button Grid.Column="0" Content="載入 JSON" Click="LoadRecipe_Click"/>
                                 <Button Grid.Column="2" Content="儲存 JSON" Click="SaveRecipe_Click" Background="#475569"/>
                             </Grid>
                             <Button Content="套用內建起始配方" Click="ApplyBuiltInRecipe_Click" Background="#334155"/>
+
+                            <TextBlock Text="批次追溯" FontWeight="SemiBold" Foreground="#C4B5FD" Margin="0,6,0,8"/>
+                            <TextBlock Text="批號／工單號"/><TextBox x:Name="BatchIdTextBox"/>
+                            <CheckBox x:Name="ExcludeAnnotationsCheckBox" Content="排除 _GT／mask／label 標註影像" IsChecked="True"/>
+                            <CheckBox x:Name="IncludeSubfoldersCheckBox" Content="包含子資料夾" IsChecked="False"/>
 
                             <TextBlock Text="影像輸入" FontWeight="SemiBold" Foreground="#7DD3FC" Margin="0,6,0,9"/>
                             <Grid>

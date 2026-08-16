@@ -13,9 +13,6 @@ namespace AoiInspector.App;
 
 public partial class MainWindow : Window
 {
-    private static readonly string[] SupportedImageExtensions =
-        [".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"];
-
     private readonly SurfaceDefectInspector _traditionalInspector = new();
     private OnnxSurfaceDefectInspector? _aiInspector;
     private RgbImage? _currentColorImage;
@@ -29,6 +26,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         ApplyRecipe(RecipeCatalog.BuiltIn[0]);
+        BatchIdTextBox.Text = $"LOT-{DateTime.Now:yyyyMMdd-HHmmss}";
         LoadDemoImage();
         UpdateModelStatus();
     }
@@ -131,6 +129,9 @@ public partial class MainWindow : Window
         try
         {
             var recipe = ReadRecipeFromControls();
+            var batchId = BatchIdTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(batchId))
+                throw new InvalidOperationException("批號／工單號不可空白。");
             var folderDialog = new OpenFolderDialog
             {
                 Title = "選擇批次檢測資料夾",
@@ -138,12 +139,12 @@ public partial class MainWindow : Window
             };
             if (folderDialog.ShowDialog() != true) return;
 
-            var files = Directory.EnumerateFiles(folderDialog.FolderName)
-                .Where(path => SupportedImageExtensions.Contains(
-                    Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
-                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            if (files.Length == 0)
+            var inputRoot = folderDialog.FolderName;
+            var files = InspectionInputFilter.Enumerate(
+                inputRoot,
+                IncludeSubfoldersCheckBox.IsChecked == true,
+                ExcludeAnnotationsCheckBox.IsChecked == true);
+            if (files.Count == 0)
                 throw new InvalidOperationException("選定資料夾中沒有支援的影像檔。");
 
             var saveDialog = new SaveFileDialog
@@ -156,38 +157,62 @@ public partial class MainWindow : Window
             };
             if (saveDialog.ShowDialog() != true) return;
 
-            BeginOperation($"準備批次檢測，共 {files.Length} 張…");
+            BeginOperation($"準備批次檢測，共 {files.Count} 張…");
             var token = _operationCts!.Token;
             var entries = new List<InspectionLogEntry>();
+            var recipeSha256 = RecipeFile.ComputeSha256(recipe);
+            using var csvWriter = InspectionCsv.CreateWriter(saveDialog.FileName);
             try
             {
-                for (var index = 0; index < files.Length; index++)
+                for (var index = 0; index < files.Count; index++)
                 {
                     token.ThrowIfCancellationRequested();
                     StatusText.Text = "BATCH";
-                    DetailText.Text = $"{index + 1} / {files.Length}　{Path.GetFileName(files[index])}";
+                    DetailText.Text = $"{index + 1} / {files.Count}　{Path.GetFileName(files[index])}";
                     var path = files[index];
-                    var execution = await Task.Run(() =>
+                    try
                     {
-                        var color = LoadRgbImage(path);
-                        return ExecuteInspection(color, color.ToGrayImage(), recipe);
-                    }, token);
-                    token.ThrowIfCancellationRequested();
-                    entries.Add(CreateLogEntry(path, recipe, execution));
+                        var execution = await Task.Run(() =>
+                        {
+                            var color = LoadRgbImage(path);
+                            return ExecuteInspection(color, color.ToGrayImage(), recipe);
+                        }, token);
+                        var entry = CreateLogEntry(
+                            path, inputRoot, batchId, recipeSha256, recipe, execution);
+                        entries.Add(entry);
+                        csvWriter.Write(entry);
+                        token.ThrowIfCancellationRequested();
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        var entry = CreateErrorLogEntry(
+                            path, inputRoot, batchId, recipeSha256, recipe,
+                            ex.GetBaseException().Message);
+                        entries.Add(entry);
+                        csvWriter.Write(entry);
+                    }
                 }
 
-                InspectionCsv.Write(saveDialog.FileName, entries);
-                var ng = entries.Count(entry => entry.Verdict == InspectionVerdict.Ng);
+                var errors = entries.Count(entry =>
+                    entry.ProcessingStatus == InspectionProcessingStatus.Error);
+                var ng = entries.Count(entry =>
+                    entry.ProcessingStatus == InspectionProcessingStatus.Completed &&
+                    entry.Verdict == InspectionVerdict.Ng);
                 var review = entries.Count(entry => entry.RequiresReview);
-                StatusText.Text = ng == 0 ? "BATCH OK" : "BATCH DONE";
-                StatusText.Foreground = ng == 0 ? Brushes.LimeGreen : Brushes.Gold;
-                DetailText.Text = $"完成 {entries.Count} 張；NG {ng}、需複核 {review}。CSV：{Path.GetFileName(saveDialog.FileName)}";
+                StatusText.Text = ng == 0 && errors == 0 ? "BATCH OK" : "BATCH DONE";
+                StatusText.Foreground = ng == 0 && errors == 0 ? Brushes.LimeGreen : Brushes.Gold;
+                DetailText.Text =
+                    $"完成 {entries.Count} 張；NG {ng}、錯誤 {errors}、需複核 {review}。" +
+                    $"CSV：{Path.GetFileName(saveDialog.FileName)}";
                 TimingText.Text = $"總核心時間：{entries.Sum(entry => entry.ElapsedMilliseconds):F1} ms";
             }
             catch (OperationCanceledException)
             {
-                if (entries.Count > 0) InspectionCsv.Write(saveDialog.FileName, entries);
-                ShowCancelled($"批次已停止；已完成 {entries.Count} 張並保留部分 CSV。");
+                ShowCancelled($"批次已停止；已寫入 {entries.Count} 筆並保留部分 CSV。");
             }
         }
         catch (Exception ex) { ShowError(ex.GetBaseException().Message); }
@@ -237,15 +262,67 @@ public partial class MainWindow : Window
     }
 
     private static InspectionLogEntry CreateLogEntry(
-        string path, InspectionRecipe recipe, InspectionExecution execution) => new(
-            DateTimeOffset.Now, Path.GetFileName(path), recipe.Name, recipe.Mode,
+        string path,
+        string inputRoot,
+        string batchId,
+        string recipeSha256,
+        InspectionRecipe recipe,
+        InspectionExecution execution) => new(
+            DateTimeOffset.Now,
+            batchId,
+            recipe.ProductCode,
+            Path.GetFileName(path),
+            RelativePath(inputRoot, path),
+            recipe.Name,
+            recipe.RecipeVersion,
+            recipeSha256,
+            recipe.Mode,
+            InspectionProcessingStatus.Completed,
             execution.Decision.Verdict, execution.Decision.RequiresReview,
-            execution.Decision.ReasonCode, execution.Traditional?.DefectAreaRatio,
+            execution.Decision.ReasonCode,
+            string.Empty,
+            recipe.MicrometersPerPixel,
+            recipe.CameraProfile,
+            recipe.LightingProfile,
+            execution.Traditional?.DefectAreaRatio,
             execution.Ai?.DefectAreaRatio,
             execution.TraditionalMeasurement?.DefectAreaSquareMillimeters,
             execution.AiMeasurement?.DefectAreaSquareMillimeters,
             (execution.Traditional?.ElapsedMilliseconds ?? 0) +
             (execution.Ai?.ElapsedMilliseconds ?? 0));
+
+    private static InspectionLogEntry CreateErrorLogEntry(
+        string path,
+        string inputRoot,
+        string batchId,
+        string recipeSha256,
+        InspectionRecipe recipe,
+        string errorMessage) => new(
+            DateTimeOffset.Now,
+            batchId,
+            recipe.ProductCode,
+            Path.GetFileName(path),
+            RelativePath(inputRoot, path),
+            recipe.Name,
+            recipe.RecipeVersion,
+            recipeSha256,
+            recipe.Mode,
+            InspectionProcessingStatus.Error,
+            InspectionVerdict.Review,
+            true,
+            "IMAGE_PROCESSING_ERROR",
+            errorMessage,
+            recipe.MicrometersPerPixel,
+            recipe.CameraProfile,
+            recipe.LightingProfile,
+            null,
+            null,
+            null,
+            null,
+            0);
+
+    private static string RelativePath(string root, string path) =>
+        Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
 
     private void ShowExecution(InspectionExecution execution, InspectionRecipe recipe)
     {
@@ -300,6 +377,8 @@ public partial class MainWindow : Window
         var recipe = new InspectionRecipe
         {
             Name = RecipeNameTextBox.Text.Trim(),
+            RecipeVersion = RecipeVersionTextBox.Text.Trim(),
+            ProductCode = ProductCodeTextBox.Text.Trim(),
             Description = _recipeDescription,
             Mode = (InspectionMode)InspectionModeComboBox.SelectedIndex,
             HybridRule = (HybridDecisionRule)HybridRuleComboBox.SelectedIndex,
@@ -317,6 +396,8 @@ public partial class MainWindow : Window
     {
         recipe.Validate(); _recipeDescription = recipe.Description;
         RecipeNameTextBox.Text = recipe.Name;
+        RecipeVersionTextBox.Text = recipe.RecipeVersion;
+        ProductCodeTextBox.Text = recipe.ProductCode;
         InspectionModeComboBox.SelectedIndex = (int)recipe.Mode;
         HybridRuleComboBox.SelectedIndex = (int)recipe.HybridRule;
         MicrometersPerPixelTextBox.Text = recipe.MicrometersPerPixel.ToString("0.####", CultureInfo.InvariantCulture);

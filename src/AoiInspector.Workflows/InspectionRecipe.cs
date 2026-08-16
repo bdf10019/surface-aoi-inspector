@@ -7,6 +7,8 @@ public sealed record InspectionRecipe
 {
     public int SchemaVersion { get; init; } = 1;
     public string Name { get; init; } = "一般表面檢測";
+    public string RecipeVersion { get; init; } = "1.0";
+    public string ProductCode { get; init; } = "DEMO-PART";
     public string Description { get; init; } = string.Empty;
     public InspectionMode Mode { get; init; } = InspectionMode.Hybrid;
     public HybridDecisionRule HybridRule { get; init; } = HybridDecisionRule.AnyNg;
@@ -22,6 +24,10 @@ public sealed record InspectionRecipe
             throw new InvalidDataException($"不支援的配方版本：{SchemaVersion}");
         if (string.IsNullOrWhiteSpace(Name))
             throw new InvalidDataException("配方名稱不可空白。");
+        if (string.IsNullOrWhiteSpace(RecipeVersion))
+            throw new InvalidDataException("配方版本不可空白。");
+        if (string.IsNullOrWhiteSpace(ProductCode))
+            throw new InvalidDataException("料號不可空白。");
         if (!Enum.IsDefined(Mode))
             throw new InvalidDataException("檢測模式無效。");
         if (!Enum.IsDefined(HybridRule))
@@ -50,6 +56,8 @@ public static class RecipeCatalog
         new InspectionRecipe
         {
             Name = "精密金屬表面－起始配方",
+            RecipeVersion = "1.0-demo",
+            ProductCode = "DEMO-PRECISION-PART",
             Description = "供離線驗證使用的起始值；上線前須依鏡頭、治具、光源與量測標準重新校正。",
             Mode = InspectionMode.Hybrid,
             HybridRule = HybridDecisionRule.AnyNg,

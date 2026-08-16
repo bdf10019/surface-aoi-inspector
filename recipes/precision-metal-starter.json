@@ -1,6 +1,8 @@
 {
   "SchemaVersion": 1,
   "Name": "精密金屬表面－起始配方",
+  "RecipeVersion": "1.0-demo",
+  "ProductCode": "DEMO-PRECISION-PART",
   "Description": "供離線驗證使用的起始值；上線前須依鏡頭、治具、光源與量測標準重新校正。",
   "Mode": "Hybrid",
   "HybridRule": "AnyNg",
