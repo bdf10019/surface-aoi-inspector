@@ -1,5 +1,7 @@
 # Surface AOI Inspector
 
+授權狀態：現行原創程式未另行授予通用開源授權；歷史版本與第三方／資料授權另見 [LICENSE_INFORMATION.md](LICENSE_INFORMATION.md)。
+
 一套在 Windows 執行的工業表面瑕疵檢測工作站。程式可載入產品影像、調整檢測參數、標記局部異常區域，並輸出 OK／NG、瑕疵面積與處理時間。
 
 本作品本身是一個獨立的工業視覺專案，不依附任何公司或徵才內容。

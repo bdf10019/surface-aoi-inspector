@@ -9,7 +9,7 @@ The project uses KSDD2 only for local, non-commercial training and evaluation. T
 - Authors: Jakob Božič, Domen Tabernik, Danijel Skočaj
 - Citation: Božič, J., Tabernik, D., & Skočaj, D. (2021). *Mixed supervision for surface-defect detection: from weakly to fully supervised learning*. Computers in Industry.
 
-KSDD2 remains subject to its own license. The MIT license in this repository applies only to original project code and documentation.
+KSDD2 remains subject to its own license. The current original-code licensing status and historical permissions are described in [LICENSE_INFORMATION.md](LICENSE_INFORMATION.md).
 
 ## Runtime dependencies
 
